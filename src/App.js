@@ -7,11 +7,11 @@ function App() {
   const [processedEmails, setProcessedEmails] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [customValues, setCustomValues] = useState({
-    rp: 'example.com',
-    rdns: 'example.com',
-    advunsub: 'unsubscribe',
-    to: 'recipient@example.com',
-    date: new Date().toGMTString()
+    rp: 'RP',
+    rdns: 'RDNS',
+    advunsub: 'ADVUNSUB',
+    to: '*To',
+    date: '*DATE'
   });
   const [activeEmailIndex, setActiveEmailIndex] = useState(0);
 
