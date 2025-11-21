@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import './style.css';
+import './App.css';
 
 function App() {
   const [emailFiles, setEmailFiles] = useState([]);
