@@ -18,6 +18,7 @@ function App() {
   // Exact headers to remove (only these specific ones)
   const headersToRemove = [
     'X-MS-Exchange-Transport-CrossTenantHeadersStamped',
+    'sender','X-Mailin-EID',
     'X-Forwarded-Encrypted',
     'Delivered-To',
     'Received: by',  // Only "Received: by" not "Received: from"
