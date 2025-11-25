@@ -279,101 +279,238 @@ function App() {
   };
 
   const processHeadersAndBody = (headersSection, bodySection) => {
-    if (!headersSection) {
-      throw new Error('No headers found in email');
+  if (!headersSection) {
+    throw new Error('No headers found in email');
+  }
+
+  // Process headers with proper multi-line handling and spacing preservation
+  const headerLines = headersSection.split('\n');
+  const processedHeaders = [];
+  let currentHeader = '';
+
+  headerLines.forEach((line, index) => {
+    // Preserve the exact line including whitespace
+    const originalLine = line;
+
+    // Check if this line starts a new header (starts with header name followed by colon)
+    if (originalLine.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/)) {
+      // If we have a current header being built, push it before starting new one
+      if (currentHeader) {
+        processedHeaders.push(currentHeader);
+      }
+      currentHeader = originalLine;
+    } 
+    // Check if this is a continuation line (starts with whitespace)
+    else if (currentHeader && originalLine.match(/^\s/)) {
+      // Continue the current header with proper line break and spacing
+      currentHeader += '\n' + originalLine;
     }
-
-    // Process headers with improved multi-line handling
-    const headerLines = headersSection.split('\n');
-    const processedHeaders = [];
-    let currentHeader = '';
-
-    headerLines.forEach((line) => {
-      // Skip completely empty lines
-      if (line.trim() === '') {
-        return;
+    // Handle empty lines (shouldn't occur in headers section, but if they do)
+    else if (originalLine.trim() === '') {
+      if (currentHeader) {
+        processedHeaders.push(currentHeader);
+        currentHeader = '';
       }
-
-      // Check if this line starts a new header
-      if (line.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/)) {
-        // If we have a current header being built, push it before starting new one
-        if (currentHeader) {
-          processedHeaders.push(currentHeader);
-        }
-        currentHeader = line;
-      } 
-      // Check if this is a continuation line (starts with whitespace or is empty)
-      else if (currentHeader && (line.match(/^\s/) || line === '')) {
-        // Continue the current header
-        currentHeader += '\n' + line;
-      }
-      // If we encounter a non-header line that's not a continuation
-      else {
-        // This might be malformed content, but we'll treat it as a new header
-        if (currentHeader) {
-          processedHeaders.push(currentHeader);
-        }
-        currentHeader = line;
-      }
-    });
-
-    // Don't forget the last header
-    if (currentHeader) {
-      processedHeaders.push(currentHeader);
     }
-
-    // Validate that we found some headers
-    if (processedHeaders.length === 0) {
-      throw new Error('No valid headers found in email');
+    // If we encounter a non-header line that's not a continuation
+    else {
+      // This might be malformed content
+      if (currentHeader) {
+        processedHeaders.push(currentHeader);
+        currentHeader = '';
+      }
+      // Optionally preserve malformed lines or skip them
+      // processedHeaders.push(originalLine);
     }
+  });
 
-    // Apply modifications
-    let modifiedHeaders = processedHeaders.map(header => {
-      const headerName = header.split(':')[0].trim();
-      
-      if (headerName === 'Message-ID') {
-        return insertEIDIntoMessageId(header);
-      } else if (headerName === 'From') {
-        return modifyFromHeader(header, customValues.rp);
-      } else if (headerName === 'To') {
-        return modifyToHeader(header, customValues.to);
-      } else if (headerName === 'Date') {
-        return modifyDateHeader(header, customValues.date);
+  // Don't forget the last header
+  if (currentHeader) {
+    processedHeaders.push(currentHeader);
+  }
+
+  // Validate that we found some headers
+  if (processedHeaders.length === 0) {
+    throw new Error('No valid headers found in email');
+  }
+
+  // Apply modifications with proper spacing preservation
+  let modifiedHeaders = processedHeaders.map(header => {
+    const headerName = header.split(':')[0].trim();
+    const originalSpacing = header.match(/^[^:]+:\s*/)?.[0] || headerName + ': ';
+    
+    if (headerName === 'Message-ID') {
+      return insertEIDIntoMessageId(header);
+    } else if (headerName === 'From') {
+      return modifyFromHeader(header, customValues.rp);
+    } else if (headerName === 'To') {
+      return modifyToHeader(header, customValues.to);
+    } else if (headerName === 'Date') {
+      return modifyDateHeader(header, customValues.date);
+    }
+    return header; // Return original header with preserved formatting
+  });
+
+  // Remove specified headers
+  modifiedHeaders = modifiedHeaders.filter(header => {
+    const headerName = header.split(':')[0].trim();
+    
+    if (headerName === 'Received') {
+      const headerValue = header.toLowerCase();
+      // Only remove "Received: by" headers, keep "Received: from"
+      if (headerValue.includes('received: by') || headerValue.includes('received by')) {
+        return false;
       }
-      return header;
+      return true;
+    }
+    
+    return !headersToRemove.some(toRemove => {
+      const cleanToRemove = toRemove.replace(': by', '').toLowerCase();
+      return headerName.toLowerCase() === cleanToRemove;
     });
+  });
 
-    // Remove specified headers
-    modifiedHeaders = modifiedHeaders.filter(header => {
-      const headerName = header.split(':')[0].trim();
-      
-      if (headerName === 'Received') {
-        const headerValue = header.toLowerCase();
-        if (headerValue.includes('received: by') || headerValue.includes('received by')) {
-          return false;
-        }
-        return true;
-      }
-      
-      return !headersToRemove.some(toRemove => {
-        const cleanToRemove = toRemove.replace(': by', '').toLowerCase();
-        return headerName.toLowerCase() === cleanToRemove;
-      });
-    });
+  // Add unsubscribe headers with proper formatting
+  const unsubscribeHeaders = addUnsubscribeHeaders(customValues.rdns, customValues.advunsub);
+  modifiedHeaders.push(...unsubscribeHeaders);
 
-    // Add unsubscribe headers
-    const unsubscribeHeaders = addUnsubscribeHeaders(customValues.rdns, customValues.advunsub);
-    modifiedHeaders.push(...unsubscribeHeaders);
+  // Preserve the exact spacing between headers and body
+  const filteredEmailContent = modifiedHeaders.join('\n') + '\n\n' + bodySection;
 
-    const filteredEmailContent = modifiedHeaders.join('\n') + '\n\n' + bodySection;
-
-    return {
-      headers: processedHeaders,
-      body: bodySection,
-      filteredEmail: filteredEmailContent
-    };
+  return {
+    headers: processedHeaders,
+    body: bodySection,
+    filteredEmail: filteredEmailContent
   };
+};
 
+// Fixed helper functions to preserve formatting
+const modifyFromHeader = (fromHeader, rpValue) => {
+  if (!fromHeader) return 'From: <info@[' + rpValue + ']>';
+  
+  const fromName = extractFromName(fromHeader);
+  // Preserve the original spacing after "From:"
+  const originalSpacing = fromHeader.match(/^From:(\s*)/)?.[1] || ' ';
+  
+  if (fromName) {
+    return `From:${originalSpacing}"${fromName}" <info@[${rpValue}]>`;
+  } else {
+    return `From:${originalSpacing}<info@[${rpValue}]>`;
+  }
+};
+
+const modifyToHeader = (toHeader, toValue) => {
+  const originalSpacing = toHeader.match(/^To:(\s*)/)?.[1] || ' ';
+  return `To:${originalSpacing}[${toValue}]`;
+};
+
+const modifyDateHeader = (dateHeader, dateValue) => {
+  const originalSpacing = dateHeader.match(/^Date:(\s*)/)?.[1] || ' ';
+  return `Date:${originalSpacing}[${dateValue}]`;
+};
+
+const insertEIDIntoMessageId = (messageId) => {
+  if (!messageId) return messageId;
+  
+  const messageIdMatch = messageId.match(/^Message-ID:\s*(<[^>]+>)/i);
+  if (!messageIdMatch) return messageId;
+  
+  const fullMessageId = messageIdMatch[0];
+  const messageIdValue = messageIdMatch[1];
+  const originalSpacing = messageId.match(/^Message-ID:(\s*)/)?.[1] || ' ';
+  
+  const messageIdContent = messageIdValue.substring(1, messageIdValue.length - 1);
+  
+  const atIndex = messageIdContent.lastIndexOf('@');
+  if (atIndex === -1) return messageId;
+  
+  const lastDotIndex = messageIdContent.lastIndexOf('.', atIndex);
+  
+  let insertPosition;
+  if (lastDotIndex !== -1) {
+    insertPosition = lastDotIndex;
+  } else {
+    insertPosition = atIndex;
+  }
+  
+  const modifiedContent = 
+    messageIdContent.substring(0, insertPosition) + 
+    '[EID]' + 
+    messageIdContent.substring(insertPosition);
+  
+  return `Message-ID:${originalSpacing}<${modifiedContent}>`;
+};
+
+const addUnsubscribeHeaders = (rdnsValue, advunsubValue) => {
+  return [
+    `List-Unsubscribe: <mailto:unsubscribe@[${rdnsValue}]>, <http://[${rdnsValue}]/[${advunsubValue}]>`,
+    'List-Unsubscribe-Post: List-Unsubscribe=One-Click'
+  ];
+};
+
+// Improved header-body separator that preserves UTF-8
+const findHeaderBodySeparator = (content) => {
+  // Normalize line endings but preserve other characters
+  const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  
+  // Method 1: Look for double newline (standard RFC 5322)
+  const doubleNewline = normalized.indexOf('\n\n');
+  if (doubleNewline !== -1) {
+    // Verify this is a true header-body separator
+    const before = normalized.substring(0, doubleNewline);
+    const after = normalized.substring(doubleNewline + 2);
+    
+    // Check if the part after looks like headers or body
+    const firstLineAfter = after.split('\n')[0];
+    const looksLikeHeader = firstLineAfter.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/);
+    
+    if (!looksLikeHeader && after.trim()) {
+      return doubleNewline + 2;
+    }
+  }
+  
+  // Method 2: More robust parsing
+  const lines = normalized.split('\n');
+  let lastHeaderEnd = -1;
+  let inHeaders = true;
+  let currentHeader = null;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (inHeaders) {
+      // Check if this is a new header line
+      if (line.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/)) {
+        currentHeader = line;
+        lastHeaderEnd = i;
+      } 
+      // Check if this is a continuation line
+      else if (currentHeader && line.match(/^\s/)) {
+        lastHeaderEnd = i;
+      }
+      // Empty line that ends headers
+      else if (line.trim() === '') {
+        if (lastHeaderEnd !== -1) {
+          return lines.slice(0, i + 1).join('\n').length;
+        }
+      }
+      // Non-header, non-continuation, non-empty line - probably body
+      else {
+        inHeaders = false;
+        if (lastHeaderEnd !== -1) {
+          return lines.slice(0, lastHeaderEnd + 1).join('\n').length;
+        }
+      }
+    }
+  }
+  
+  // Fallback: if we found headers but no clear separator, use last header
+  if (lastHeaderEnd !== -1) {
+    return lines.slice(0, lastHeaderEnd + 1).join('\n').length;
+  }
+  
+  return -1;
+};
   const processAllEmails = async () => {
     if (emailFiles.length === 0) {
       alert('Please upload some .eml files first');
