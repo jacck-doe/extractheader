@@ -441,35 +441,6 @@ function App() {
     setActiveEmailIndex(0);
   };
 
-  const isHeaderRemoved = (header) => {
-    const headerName = header.split(':')[0].trim();
-    
-    // Check if it's an X- header
-    if (headerName.toLowerCase().startsWith('x-')) {
-      return true;
-    }
-    
-    if (headerName === 'Received') {
-      const headerValue = header.toLowerCase();
-      return headerValue.includes('received: by') || headerValue.includes('received by');
-    }
-    
-    return headersToRemove.some(toRemove => {
-      const cleanToRemove = toRemove.replace(': by', '').toLowerCase();
-      return headerName.toLowerCase() === cleanToRemove;
-    });
-  };
-
-  const isHeaderModified = (header) => {
-    const headerName = header.split(':')[0].trim();
-    return ['Message-ID', 'From', 'To', 'Date'].includes(headerName);
-  };
-
-  const isHeaderAdded = (header) => {
-    const headerName = header.split(':')[0].trim();
-    return ['List-Unsubscribe', 'List-Unsubscribe-Post'].includes(headerName);
-  };
-
   const downloadEmail = (content, filename) => {
     const blob = new Blob([content], { type: 'message/rfc822' });
     const url = URL.createObjectURL(blob);
@@ -582,31 +553,6 @@ John Smith`;
       navigator.clipboard.writeText(processedEmails[activeEmailIndex].filteredContent);
       alert('Modified email copied to clipboard!');
     }
-  };
-
-  // Function to highlight differences between original and modified content
-  const highlightDifferences = (original, modified) => {
-    const originalLines = original.split('\n');
-    const modifiedLines = modified.split('\n');
-    const maxLines = Math.max(originalLines.length, modifiedLines.length);
-    
-    let result = '';
-    
-    for (let i = 0; i < maxLines; i++) {
-      const originalLine = originalLines[i] || '';
-      const modifiedLine = modifiedLines[i] || '';
-      
-      if (originalLine !== modifiedLine) {
-        result += `<div class="diff-line">
-          <div class="diff-original-line">${i + 1}: ${originalLine}</div>
-          <div class="diff-modified-line">${i + 1}: ${modifiedLine}</div>
-        </div>`;
-      } else {
-        result += `<div class="same-line">${i + 1}: ${originalLine}</div>`;
-      }
-    }
-    
-    return result;
   };
 
   return (
@@ -849,45 +795,10 @@ John Smith`;
                 {processedEmails[activeEmailIndex].status === 'completed' ? (
                   <>
                     <div className="headers-section">
-                      <h5>📋 Headers Analysis - {processedEmails[activeEmailIndex].name}</h5>
+                      <h5>📋 Processing Summary - {processedEmails[activeEmailIndex].name}</h5>
                       <div className="headers-info">
-                        <div className="headers-stats">
-                          <span>Total Headers: {processedEmails[activeEmailIndex].headers.length}</span>
-                          <span>Kept: {processedEmails[activeEmailIndex].headers.filter(h => !isHeaderRemoved(h) && !isHeaderModified(h) && !isHeaderAdded(h)).length}</span>
-                          <span>Removed: {processedEmails[activeEmailIndex].headers.filter(h => isHeaderRemoved(h)).length}</span>
-                          <span>Modified: {processedEmails[activeEmailIndex].headers.filter(h => isHeaderModified(h) && !isHeaderRemoved(h)).length}</span>
-                          <span>Added: 2</span>
-                        </div>
                         <div className="filter-info">
-                          <strong>Processing:</strong> Remove ALL X-* headers + Remove specific headers + Modify From/To/Date/Message-ID + Add Unsubscribe
-                        </div>
-                      </div>
-                     
-                               
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {/* Show added headers */}
-                        <div className="header-item added">
-                          <div className="header-number">+1</div>
-                          <div className="header-status">➕</div>
-                          <div className="header-content">
-                            <div className="header-name">List-Unsubscribe</div>
-                            <div className="header-value">
-                              {`<mailto:unsubscribe@[${customValues.rdns}]>, <http://[${customValues.rdns}]/[${customValues.advunsub}]>`}
-                            </div>
-                            <div className="header-action">ADDED</div>
-                          </div>
-                        </div>
-                        <div className="header-item added">
-                          <div className="header-number">+2</div>
-                          <div className="header-status">➕</div>
-                          <div className="header-content">
-                            <div className="header-name">List-Unsubscribe-Post</div>
-                            <div className="header-value">List-Unsubscribe=One-Click</div>
-                            <div className="header-action">ADDED</div>
-                          </div>
+                          <strong>Processing Applied:</strong> Remove ALL X-* headers + Remove specific headers + Modify From/To/Date/Message-ID + Add Unsubscribe
                         </div>
                       </div>
                     </div>
@@ -922,6 +833,14 @@ John Smith`;
                               className="btn copy-btn"
                             >
                               Copy Original Email
+                            </button>
+                          )}
+                          {viewMode === 'comparison' && (
+                            <button 
+                              onClick={copyModifiedEmail}
+                              className="btn copy-top-btn"
+                            >
+                              📋 Copy Modified Email
                             </button>
                           )}
                         </div>
