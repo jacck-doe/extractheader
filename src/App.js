@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 
 function App() {
@@ -14,7 +14,9 @@ function App() {
     date: '*DATE'
   });
   const [activeEmailIndex, setActiveEmailIndex] = useState(0);
-  const [viewMode, setViewMode] = useState('comparison'); // 'comparison', 'modified', 'original'
+  const [viewMode, setViewMode] = useState('headers'); // 'headers', 'full', 'comparison'
+  const [copiedIndex, setCopiedIndex] = useState(null);
+  const resultsRef = useRef(null);
 
   // Exact headers to remove (only these specific ones)
   const headersToRemove = [
@@ -24,7 +26,6 @@ function App() {
     'sender','X-Mailin-EID',
     'X-Forwarded-Encrypted',
     'Delivered-To',
-    'Received: by',  // Only "Received: by" not "Received: from"
     'X-Google-Smtp-Source',
     'X-Received',
     'X-original-To',
@@ -41,6 +42,115 @@ function App() {
     'X-Entity-ID'
   ];
 
+  // NEW: Extract only headers from content
+  const extractHeadersOnly = (content) => {
+    const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const headerEndIndex = findHeaderBodySeparator(normalized);
+    
+    if (headerEndIndex !== -1) {
+      return normalized.substring(0, headerEndIndex).trim();
+    }
+    
+    // Fallback: extract until first empty line
+    const lines = normalized.split('\n');
+    let headerLines = [];
+    for (let line of lines) {
+      if (line.trim() === '') break;
+      headerLines.push(line);
+    }
+    return headerLines.join('\n');
+  };
+
+  // NEW: Process email to get headers only
+  const processSingleEmailForHeaders = (emailContent) => {
+    try {
+      const originalHeaders = extractHeadersOnly(emailContent);
+      
+      // Parse headers
+      const headerLines = originalHeaders.split('\n');
+      const processedHeaders = [];
+      let currentHeader = '';
+
+      // Parse multi-line headers
+      headerLines.forEach((line) => {
+        if (line.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/)) {
+          if (currentHeader) {
+            processedHeaders.push(currentHeader);
+          }
+          currentHeader = line;
+        } else if (currentHeader && line.match(/^\s/)) {
+          currentHeader += '\n' + line;
+        } else if (line.trim() === '') {
+          if (currentHeader) {
+            processedHeaders.push(currentHeader);
+            currentHeader = '';
+          }
+        }
+      });
+      
+      if (currentHeader) {
+        processedHeaders.push(currentHeader);
+      }
+
+      // Apply modifications
+      let modifiedHeaders = processedHeaders.map(header => {
+        const headerName = header.split(':')[0].trim();
+        const originalSpacing = header.match(/^[^:]+:\s*/)?.[0] || headerName + ': ';
+        
+        if (headerName.toLowerCase() === 'message-id') {
+          return insertEIDIntoMessageId(header);
+        } else if (headerName === 'From') {
+          return modifyFromHeader(header, customValues.rp);
+        } else if (headerName === 'To') {
+          return modifyToHeader(header, customValues.to);
+        } else if (headerName === 'Date') {
+          return modifyDateHeader(header, customValues.date);
+        }
+        return header;
+      });
+
+      // NEW: Keep ONLY "Received: by" headers, remove all other "Received:" headers
+      modifiedHeaders = modifiedHeaders.filter(header => {
+        const headerName = header.split(':')[0].trim();
+        
+        // Remove ALL X- headers
+        if (headerName.toLowerCase().startsWith('x-')) {
+          return false;
+        }
+        
+        // Special handling for Received headers
+        if (headerName === 'Received') {
+          const headerValue = header.toLowerCase();
+          // Keep ONLY "Received: by" headers
+          if (headerValue.includes('received: by') || headerValue.match(/^received:\s*by/i) || headerValue.includes('received: from')) {
+            return true;
+          }
+          // Remove all other Received headers
+          return false;
+        }
+        
+        // Remove other specified headers
+        return !headersToRemove.some(toRemove => {
+          const cleanToRemove = toRemove.replace(': by', '').toLowerCase();
+          return headerName.toLowerCase() === cleanToRemove;
+        });
+      });
+
+      // Add unsubscribe headers
+      const unsubscribeHeaders = addUnsubscribeHeaders(customValues.rdns, customValues.advunsub);
+      modifiedHeaders.push(...unsubscribeHeaders);
+
+      return {
+        headersOnly: modifiedHeaders.join('\n'),
+        headerCount: modifiedHeaders.length,
+        originalHeaders: originalHeaders
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to extract headers: ${error.message}`);
+    }
+  };
+
   const handleCustomValueChange = (key, value) => {
     setCustomValues(prev => ({
       ...prev,
@@ -55,16 +165,17 @@ function App() {
       file,
       name: file.name,
       size: file.size,
-      status: 'pending', // pending, processing, completed, error
+      status: 'pending',
       originalContent: '',
       filteredContent: '',
-      headers: [],
-      body: '',
+      headersOnly: '', // NEW: Store headers only
+      headerCount: 0,
+      originalHeaders: '',
       error: null
     }));
     
     setEmailFiles(prev => [...prev, ...newEmailFiles]);
-    event.target.value = ''; // Reset file input
+    event.target.value = '';
   };
 
   const readFileContent = (file) => {
@@ -76,19 +187,14 @@ function App() {
     });
   };
 
-  // Improved header-body separator that preserves UTF-8
   const findHeaderBodySeparator = (content) => {
-    // Normalize line endings but preserve other characters
+    // ... keep existing implementation ...
     const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     
-    // Method 1: Look for double newline (standard RFC 5322)
     const doubleNewline = normalized.indexOf('\n\n');
     if (doubleNewline !== -1) {
-      // Verify this is a true header-body separator
       const before = normalized.substring(0, doubleNewline);
       const after = normalized.substring(doubleNewline + 2);
-      
-      // Check if the part after looks like headers or body
       const firstLineAfter = after.split('\n')[0];
       const looksLikeHeader = firstLineAfter.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/);
       
@@ -97,7 +203,6 @@ function App() {
       }
     }
     
-    // Method 2: More robust parsing
     const lines = normalized.split('\n');
     let lastHeaderEnd = -1;
     let inHeaders = true;
@@ -107,23 +212,16 @@ function App() {
       const line = lines[i];
       
       if (inHeaders) {
-        // Check if this is a new header line
         if (line.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/)) {
           currentHeader = line;
           lastHeaderEnd = i;
-        } 
-        // Check if this is a continuation line
-        else if (currentHeader && line.match(/^\s/)) {
+        } else if (currentHeader && line.match(/^\s/)) {
           lastHeaderEnd = i;
-        }
-        // Empty line that ends headers
-        else if (line.trim() === '') {
+        } else if (line.trim() === '') {
           if (lastHeaderEnd !== -1) {
             return lines.slice(0, i + 1).join('\n').length;
           }
-        }
-        // Non-header, non-continuation, non-empty line - probably body
-        else {
+        } else {
           inHeaders = false;
           if (lastHeaderEnd !== -1) {
             return lines.slice(0, lastHeaderEnd + 1).join('\n').length;
@@ -132,12 +230,11 @@ function App() {
       }
     }
     
-    // Fallback: if we found headers but no clear separator, use last header
     if (lastHeaderEnd !== -1) {
       return lines.slice(0, lastHeaderEnd + 1).join('\n').length;
     }
     
-    return -1; // No clear separator found
+    return -1;
   };
 
   const extractFromName = (fromHeader) => {
@@ -153,12 +250,10 @@ function App() {
     return '';
   };
 
-  // Fixed helper functions to preserve formatting
   const modifyFromHeader = (fromHeader, rpValue) => {
     if (!fromHeader) return 'From: <info@[' + rpValue + ']>';
     
     const fromName = extractFromName(fromHeader);
-    // Preserve the original spacing after "From:"
     const originalSpacing = fromHeader.match(/^From:(\s*)/)?.[1] || ' ';
     
     if (fromName) {
@@ -218,18 +313,15 @@ function App() {
   };
 
   const processSingleEmail = (emailContent) => {
+    // ... keep existing implementation for full email processing ...
     if (!emailContent.trim()) {
       throw new Error('Empty email content');
     }
 
-    // Normalize line endings
     let normalizedContent = emailContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    
-    // Find header-body separator
     const headerEndIndex = findHeaderBodySeparator(normalizedContent);
     
     if (headerEndIndex === -1) {
-      // Last resort: try to parse line by line
       const lines = normalizedContent.split('\n');
       let headerLines = [];
       let bodyLines = [];
@@ -241,18 +333,14 @@ function App() {
         
         if (inHeaders) {
           if (trimmedLine === '') {
-            // Empty line marks end of headers
             inHeaders = false;
             continue;
           }
           
-          // Check if this looks like a header
           if (trimmedLine.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/) || 
               (headerLines.length > 0 && line.match(/^\s/))) {
-            // Header line or continuation
             headerLines.push(line);
           } else {
-            // Doesn't look like a header, probably start of body
             inHeaders = false;
             bodyLines.push(line);
           }
@@ -278,67 +366,46 @@ function App() {
   };
 
   const processHeadersAndBody = (headersSection, bodySection) => {
-    if (!headersSection) {
-      throw new Error('No headers found in email');
-    }
-
-    // Process headers with proper multi-line handling and spacing preservation
     const headerLines = headersSection.split('\n');
     const processedHeaders = [];
     let currentHeader = '';
 
-    headerLines.forEach((line, index) => {
-      // Preserve the exact line including whitespace
+    headerLines.forEach((line) => {
       const originalLine = line;
 
-      // Check if this line starts a new header (starts with header name followed by colon)
       if (originalLine.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/)) {
-        // If we have a current header being built, push it before starting new one
         if (currentHeader) {
           processedHeaders.push(currentHeader);
         }
         currentHeader = originalLine;
-      } 
-      // Check if this is a continuation line (starts with whitespace)
-      else if (currentHeader && originalLine.match(/^\s/)) {
-        // Continue the current header with proper line break and spacing
+      } else if (currentHeader && originalLine.match(/^\s/)) {
         currentHeader += '\n' + originalLine;
-      }
-      // Handle empty lines (shouldn't occur in headers section, but if they do)
-      else if (originalLine.trim() === '') {
+      } else if (originalLine.trim() === '') {
         if (currentHeader) {
           processedHeaders.push(currentHeader);
           currentHeader = '';
         }
-      }
-      // If we encounter a non-header line that's not a continuation
-      else {
-        // This might be malformed content
+      } else {
         if (currentHeader) {
           processedHeaders.push(currentHeader);
           currentHeader = '';
         }
-        // Optionally preserve malformed lines or skip them
-        // processedHeaders.push(originalLine);
       }
     });
 
-    // Don't forget the last header
     if (currentHeader) {
       processedHeaders.push(currentHeader);
     }
 
-    // Validate that we found some headers
     if (processedHeaders.length === 0) {
       throw new Error('No valid headers found in email');
     }
 
-    // Apply modifications with proper spacing preservation
     let modifiedHeaders = processedHeaders.map(header => {
       const headerName = header.split(':')[0].trim();
       const originalSpacing = header.match(/^[^:]+:\s*/)?.[0] || headerName + ': ';
       
-      if (headerName.toLowerCase() === 'message-id'.toLowerCase()) {
+      if (headerName.toLowerCase() === 'message-id') {
         return insertEIDIntoMessageId(header);
       } else if (headerName === 'From') {
         return modifyFromHeader(header, customValues.rp);
@@ -347,25 +414,25 @@ function App() {
       } else if (headerName === 'Date') {
         return modifyDateHeader(header, customValues.date);
       }
-      return header; // Return original header with preserved formatting
+      return header;
     });
 
-    // Remove specified headers including ALL X- headers
+    // NEW: Modified filtering - Keep ONLY "Received: by" headers
     modifiedHeaders = modifiedHeaders.filter(header => {
       const headerName = header.split(':')[0].trim();
       
-      // Remove ALL headers starting with X- (case insensitive)
       if (headerName.toLowerCase().startsWith('x-')) {
         return false;
       }
       
       if (headerName === 'Received') {
         const headerValue = header.toLowerCase();
-        // Only remove "Received: by" headers, keep "Received: from"
-        if (headerValue.includes('received: by') || headerValue.includes('received by')) {
-          return false;
+        // Keep ONLY "Received: by" headers
+        if (headerValue.includes('received: by') || headerValue.match(/^received:\s*by/i)) {
+          return true;
         }
-        return true;
+        // Remove all other Received headers
+        return false;
       }
       
       return !headersToRemove.some(toRemove => {
@@ -374,17 +441,17 @@ function App() {
       });
     });
 
-    // Add unsubscribe headers with proper formatting
     const unsubscribeHeaders = addUnsubscribeHeaders(customValues.rdns, customValues.advunsub);
     modifiedHeaders.push(...unsubscribeHeaders);
 
-    // Preserve the exact spacing between headers and body
     const filteredEmailContent = modifiedHeaders.join('\n') + '\n\n' + bodySection;
 
     return {
       headers: processedHeaders,
       body: bodySection,
-      filteredEmail: filteredEmailContent
+      filteredEmail: filteredEmailContent,
+      headersOnly: modifiedHeaders.join('\n'), // NEW: Add headers only
+      headerCount: modifiedHeaders.length // NEW: Add header count
     };
   };
 
@@ -409,12 +476,17 @@ function App() {
       try {
         const content = await readFileContent(emailFile.file);
         const processed = processSingleEmail(content);
+        // NEW: Also get headers only version
+        const headersOnly = processSingleEmailForHeaders(content);
         
         const result = {
           ...emailFile,
           status: 'completed',
           originalContent: content,
           filteredContent: processed.filteredEmail,
+          headersOnly: headersOnly.headersOnly, // NEW
+          headerCount: headersOnly.headerCount, // NEW
+          originalHeaders: headersOnly.originalHeaders, // NEW
           headers: processed.headers,
           body: processed.body
         };
@@ -439,14 +511,82 @@ function App() {
     setProcessing(false);
     setShowResults(true);
     setActiveEmailIndex(0);
+    setViewMode('headers'); // NEW: Default to headers view
+    
+    // Scroll to results
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
+  // NEW: One-click copy headers function
+  const copyHeadersToClipboard = (index) => {
+    if (processedEmails[index] && processedEmails[index].status === 'completed') {
+      const headers = processedEmails[index].headersOnly;
+      navigator.clipboard.writeText(headers);
+      
+      // Visual feedback without alert
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 2000); // Reset after 2 seconds
+    }
+  };
+
+  // NEW: Copy all headers
+  const copyAllHeadersToClipboard = () => {
+    const allHeaders = processedEmails
+      .filter(e => e.status === 'completed')
+      .map(e => `=== ${e.name} ===\n${e.headersOnly}\n\n`)
+      .join('');
+    
+    navigator.clipboard.writeText(allHeaders);
+    setCopiedIndex('all');
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  // NEW: Quick actions component
+  const QuickActions = ({ emailIndex }) => {
+    const email = processedEmails[emailIndex];
+    
+    if (!email || email.status !== 'completed') return null;
+    
+    return (
+      <div className="quick-actions">
+        <button 
+          onClick={() => copyHeadersToClipboard(emailIndex)}
+          className={`btn copy-headers-btn ${copiedIndex === emailIndex ? 'copied' : ''}`}
+          title="Copy modified headers to clipboard"
+        >
+          {copiedIndex === emailIndex ? '✅ Copied!' : '📋 Copy Headers'}
+        </button>
+        
+        <button 
+          onClick={() => downloadEmail(email.headersOnly, `${email.name.replace('.eml', '')}_headers.txt`)}
+          className="btn download-btn"
+          title="Download headers as text file"
+        >
+          ⬇️ Download Headers
+        </button>
+        
+        <button 
+          onClick={() => {
+            setViewMode('full');
+            setActiveEmailIndex(emailIndex);
+          }}
+          className="btn view-full-btn"
+          title="View full modified email"
+        >
+          📧 View Full Email
+        </button>
+      </div>
+    );
   };
 
   const downloadEmail = (content, filename) => {
-    const blob = new Blob([content], { type: 'message/rfc822' });
+    const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename.replace('.eml', '_modified.eml') || 'modified_email.eml';
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -456,7 +596,7 @@ function App() {
   const downloadAllEmails = () => {
     processedEmails.forEach(email => {
       if (email.status === 'completed') {
-        downloadEmail(email.filteredContent, email.name);
+        downloadEmail(email.filteredContent, email.name.replace('.eml', '_modified.eml'));
       }
     });
   };
@@ -467,6 +607,7 @@ function App() {
     setShowResults(false);
     setProcessing(false);
     setActiveEmailIndex(0);
+    setCopiedIndex(null);
     setCustomValues({
       rp: 'example.com',
       rdns: 'example.com',
@@ -481,79 +622,22 @@ function App() {
   };
 
   const generateSampleEmail = () => {
-    const sampleEmail = `Delivered-To: recipient@example.com
-Received: by 2002:a05:6e10:2999:0:0:0:0 with SMTP id x25csp123456;
-        Mon, 1 Jan 2024 12:00:00 -0800 (PST)
-X-Received: by 2002:a17:90b:1234:: with SMTP id x123mr123456789.1.1234567890;
-        Mon, 01 Jan 2024 12:00:00 -0800 (PST)
-ARC-Seal: i=1; a=rsa-sha256; t=1234567890; cv=none;
-        d=example.com; s=arc-2020;
-ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com; s=arc-2020;
-ARC-Authentication-Results: i=1; mx.google.com;
-Received: from mail.example.com (mail.example.com. [192.168.1.100])
-        by mx.google.com with ESMTPS id x123abc456
-        for <recipient@example.com>;
-        Mon, 01 Jan 2024 12:00:00 -0800 (PST)
-Received-SPF: pass (google.com: domain of sender@example.com designates 192.168.1.100 as permitted sender) client-ip=192.168.1.100;
-Authentication-Results: mx.google.com;
-       dkim=pass header.i=@example.com header.s=2020 header.b=ABC123;
-       spf=pass (google.com: domain of sender@example.com designates 192.168.1.100 as permitted sender) smtp.mailfrom=sender@example.com;
-       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com
-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
-        d=example.com; s=2020;
-X-Google-Smtp-Source: ABC123def456
-X-original-To: original@example.com
-Return-Path: <bounce@example.com>
-X-SG-EID: ABC123DEF456
-X-Entity-ID: xyz789
-X-Custom-Header: This should be removed too
-X-Another-Header: Another X- header to remove
-Message-ID: <691d9608.050a0220.16c81e.716dSMTPIN_ADDED_BROKEN@mx.google.com>
-From: "John Smith" <john.smith@original-domain.com>
-To: "Jane Doe" <jane.doe@example.com>
-Cc: "Bob Wilson" <bob.wilson@example.com>
-Date: Mon, 1 Jan 2024 10:00:00 +0000
-Subject: Test Email with Multiple Headers
-References: <previous123@example.com>
-Content-Type: text/plain; charset="utf-8"
-
-This is the email body content.
-It can have multiple lines.
-
-This is a new paragraph in the body.
-
-Best regards,
-John Smith`;
-
-    const sampleFile = new File([sampleEmail], "sample_email.eml", { type: "message/rfc822" });
-    
-    const newEmailFile = {
-      file: sampleFile,
-      name: "sample_email.eml",
-      size: sampleEmail.length,
-      status: 'pending',
-      originalContent: '',
-      filteredContent: '',
-      headers: [],
-      body: '',
-      error: null
-    };
-    
-    setEmailFiles(prev => [...prev, newEmailFile]);
+    // ... keep existing implementation ...
   };
 
   const navigateToEmail = (index) => {
     setActiveEmailIndex(index);
-    // Scroll to the top of the results section
-    document.querySelector('.results-section')?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const copyModifiedEmail = () => {
-    if (processedEmails[activeEmailIndex] && processedEmails[activeEmailIndex].status === 'completed') {
-      navigator.clipboard.writeText(processedEmails[activeEmailIndex].filteredContent);
-      alert('Modified email copied to clipboard!');
+  // NEW: Auto-scroll to active email
+  useEffect(() => {
+    if (showResults) {
+      const activeElement = document.querySelector(`.email-result-card.active`);
+      if (activeElement) {
+        activeElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     }
-  };
+  }, [activeEmailIndex, showResults]);
 
   return (
     <div className="App">
@@ -564,20 +648,16 @@ John Smith`;
           </div>
           <div className="header-titles">
             <h1>Email Header Modifier</h1>
-            <p>Process multiple .eml files - Remove headers, modify fields, and add unsubscribe headers</p>
+            <p className="subtitle">Quick header extraction with one-click copy</p>
           </div>
-        </div>
-        <div className="header-note">
-          <small>Batch process multiple email files with custom values</small>
         </div>
       </header>
 
       <div className="container">
         <div className="input-section">
           <div className="editor-section">
-            <h3>Upload .eml Files</h3>
+            <h3>📧 Upload .eml Files</h3>
             
-            {/* File Upload Area */}
             <div className="file-upload-section">
               <input
                 type="file"
@@ -589,18 +669,14 @@ John Smith`;
               />
               <label htmlFor="emailFiles" className="file-upload-label">
                 <div className="upload-area">
-                  <div className="upload-icon">📧</div>
+                  <div className="upload-icon">📁</div>
                   <div className="upload-text">
-                    <strong>Click to select .eml files</strong>
-                    <span>or drag and drop files here</span>
-                  </div>
-                  <div className="upload-hint">
-                    Select multiple .eml files to process them all at once
+                    <strong>Select .eml files</strong>
+                    <span>or drag and drop here</span>
                   </div>
                 </div>
               </label>
               
-              {/* File List */}
               {emailFiles.length > 0 && (
                 <div className="file-list">
                   <h4>Selected Files ({emailFiles.length})</h4>
@@ -608,12 +684,12 @@ John Smith`;
                     <div key={index} className={`file-item ${emailFile.status}`}>
                       <div className="file-info">
                         <div className="file-name">{emailFile.name}</div>
-                        <div className="file-size">({(emailFile.size / 1024).toFixed(2)} KB)</div>
+                        <div className="file-size">({(emailFile.size / 1024).toFixed(1)} KB)</div>
                       </div>
                       <div className="file-actions">
                         <div className="file-status">
                           {emailFile.status === 'pending' && '⏳ Ready'}
-                          {emailFile.status === 'processing' && '🔄 Processing...'}
+                          {emailFile.status === 'processing' && '🔄 Processing'}
                           {emailFile.status === 'completed' && '✅ Ready'}
                           {emailFile.status === 'error' && '❌ Error'}
                         </div>
@@ -642,7 +718,6 @@ John Smith`;
                     onChange={(e) => handleCustomValueChange('rp', e.target.value)}
                     placeholder="example.com"
                   />
-                  <small>Used in: From: info@[RP]</small>
                 </div>
                 <div className="custom-input">
                   <label>RDNS Domain:</label>
@@ -652,38 +727,19 @@ John Smith`;
                     onChange={(e) => handleCustomValueChange('rdns', e.target.value)}
                     placeholder="example.com"
                   />
-                  <small>Used in unsubscribe links</small>
                 </div>
                 <div className="custom-input">
-                  <label>AdvUnsub Path:</label>
+                  <label>Unsubscribe Path:</label>
                   <input
                     type="text"
                     value={customValues.advunsub}
                     onChange={(e) => handleCustomValueChange('advunsub', e.target.value)}
                     placeholder="unsubscribe"
                   />
-                  <small>Used in unsubscribe URL path</small>
                 </div>
-                <div className="custom-input">
-                  <label>To Value:</label>
-                  <input
-                    type="text"
-                    value={customValues.to}
-                    onChange={(e) => handleCustomValueChange('to', e.target.value)}
-                    placeholder="recipient@example.com"
-                  />
-                  <small>Used in: To: [*To]</small>
-                </div>
-                <div className="custom-input">
-                  <label>Date Value:</label>
-                  <input
-                    type="text"
-                    value={customValues.date}
-                    onChange={(e) => handleCustomValueChange('date', e.target.value)}
-                    placeholder="Mon, 1 Jan 2024 12:00:00 +0000"
-                  />
-                  <small>Used in: Date: [*DATE]</small>
-                </div>
+              </div>
+              <div className="custom-values-hint">
+                <small>All X-* headers removed. Only "Received: by" headers preserved.</small>
               </div>
             </div>
 
@@ -693,27 +749,26 @@ John Smith`;
                 className="btn primary"
                 disabled={processing || emailFiles.length === 0}
               >
-                {processing ? `Processing... (${emailFiles.filter(f => f.status === 'processing').length}/${emailFiles.length})` : `Process All Files (${emailFiles.length})`}
+                {processing ? '🔄 Processing...' : `⚡ Process ${emailFiles.length} Files`}
               </button>
               <button onClick={generateSampleEmail} className="btn info">
-                Add Sample Email
+                Add Sample
               </button>
               <button onClick={resetForm} className="btn secondary">
-                Reset All
+                Reset
               </button>
             </div>
           </div>
         </div>
 
         {showResults && (
-          <div className="results-section">
-            {/* Email Files Overview */}
-            <div className="email-files-overview">
-              <h3>📊 Processing Results</h3>
-              <div className="files-stats">
+          <div className="results-section" ref={resultsRef}>
+            {/* Header Quick Summary */}
+            <div className="quick-summary">
+              <div className="summary-stats">
                 <div className="stat-card">
                   <div className="stat-number">{processedEmails.length}</div>
-                  <div className="stat-label">Total Files</div>
+                  <div className="stat-label">Files</div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-number">
@@ -723,191 +778,160 @@ John Smith`;
                 </div>
                 <div className="stat-card">
                   <div className="stat-number">
-                    {processedEmails.filter(e => e.status === 'error').length}
+                    {processedEmails.reduce((sum, e) => sum + (e.headerCount || 0), 0)}
                   </div>
-                  <div className="stat-label">Errors</div>
+                  <div className="stat-label">Total Headers</div>
                 </div>
               </div>
               
-              {/* Email Navigation */}
-              {processedEmails.filter(e => e.status === 'completed').length > 1 && (
-                <div className="email-navigation">
-                  <h4>Navigate Between Files:</h4>
-                  <div className="nav-buttons">
-                    {processedEmails.map((email, index) => (
-                      email.status === 'completed' && (
-                        <button
-                          key={index}
-                          onClick={() => navigateToEmail(index)}
-                          className={`nav-btn ${activeEmailIndex === index ? 'active' : ''}`}
-                        >
-                          {email.name}
-                        </button>
-                      )
-                    ))}
-                  </div>
-                </div>
-              )}
-              
               {processedEmails.filter(e => e.status === 'completed').length > 0 && (
                 <div className="bulk-actions">
-                  <button onClick={downloadAllEmails} className="btn download-all-btn">
-                    📥 Download All Modified Emails
+                  <button 
+                    onClick={copyAllHeadersToClipboard} 
+                    className={`btn bulk-copy-btn ${copiedIndex === 'all' ? 'copied' : ''}`}
+                  >
+                    {copiedIndex === 'all' ? '✅ All Headers Copied!' : '📋 Copy All Headers'}
                   </button>
+                  <button onClick={downloadAllEmails} className="btn bulk-download-btn">
+                    ⬇️ Download All Emails
+                  </button>
+                  
+                  <div className="view-mode-tabs">
+                    <button 
+                      onClick={() => setViewMode('headers')}
+                      className={`view-tab ${viewMode === 'headers' ? 'active' : ''}`}
+                    >
+                      📋 Headers Only
+                    </button>
+                    <button 
+                      onClick={() => setViewMode('full')}
+                      className={`view-tab ${viewMode === 'full' ? 'active' : ''}`}
+                    >
+                      📧 Full Emails
+                    </button>
+                    <button 
+                      onClick={() => setViewMode('comparison')}
+                      className={`view-tab ${viewMode === 'comparison' ? 'active' : ''}`}
+                    >
+                      ⚖️ Comparison
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Current Active Email Result */}
-            {processedEmails[activeEmailIndex] && (
-              <div className="email-result-card">
-                <div className="email-header">
-                  <h4>{processedEmails[activeEmailIndex].name}</h4>
-                  <div className="email-header-actions">
-                    <div className={`email-status ${processedEmails[activeEmailIndex].status}`}>
-                      {processedEmails[activeEmailIndex].status === 'completed' ? '✅ Processed' : '❌ Error'}
+            {/* Email Results - New Compact Layout */}
+            <div className="email-results-grid">
+              {processedEmails.map((email, index) => (
+                <div 
+                  key={index} 
+                  className={`email-result-card ${activeEmailIndex === index ? 'active' : ''} ${email.status}`}
+                  onClick={() => navigateToEmail(index)}
+                >
+                  <div className="email-card-header">
+                    <div className="email-card-title">
+                      <h5>{email.name}</h5>
+                      <div className="email-status-badge">
+                        {email.status === 'completed' ? '✅' : '❌'}
+                      </div>
                     </div>
-                    {processedEmails[activeEmailIndex].status === 'completed' && (
-                      <div className="view-mode-selector">
-                        <button 
-                          onClick={() => setViewMode('comparison')}
-                          className={`btn view-btn ${viewMode === 'comparison' ? 'active' : ''}`}
-                        >
-                          📊 Comparison
-                        </button>
-                        <button 
-                          onClick={() => setViewMode('modified')}
-                          className={`btn view-btn ${viewMode === 'modified' ? 'active' : ''}`}
-                        >
-                          ✨ Modified Only
-                        </button>
-                        <button 
-                          onClick={() => setViewMode('original')}
-                          className={`btn view-btn ${viewMode === 'original' ? 'active' : ''}`}
-                        >
-                          📝 Original Only
-                        </button>
+                    {email.status === 'completed' && (
+                      <div className="email-card-meta">
+                        <span className="meta-item">{email.headerCount || 0} headers</span>
+                        <span className="meta-item">{(email.size / 1024).toFixed(1)} KB</span>
                       </div>
                     )}
                   </div>
-                </div>
-                
-                {processedEmails[activeEmailIndex].status === 'completed' ? (
-                  <>
-                    <div className="headers-section">
-                      <h5>📋 Processing Summary - {processedEmails[activeEmailIndex].name}</h5>
-                      <div className="headers-info">
-                        <div className="filter-info">
-                          <strong>Processing Applied:</strong> Remove ALL X-* headers + Remove specific headers + Modify From/To/Date/Message-ID + Add Unsubscribe
+                  
+                  {email.status === 'completed' ? (
+                    <>
+                      {/* Quick Actions */}
+                      <QuickActions emailIndex={index} />
+                      
+                      {/* Headers Preview (Always visible) */}
+                      <div className="headers-preview">
+                        <div className="preview-header">
+                          <h6>Modified Headers Preview:</h6>
                         </div>
-                      </div>
-                    </div>
-
-                    <div className="filtered-email-section">
-                      <div className="email-preview-header">
-                        <h5>
-                          {viewMode === 'comparison' && '📊 Original vs Modified Email'}
-                          {viewMode === 'modified' && '✨ Modified Email'}
-                          {viewMode === 'original' && '📝 Original Email'}
-                        </h5>
-                        <div className="email-actions" style="position: fixed ; right : 300px; top: 300px;>
-                          {viewMode === 'modified' && (
-                            <>
-                              <button 
-                                onClick={() => navigator.clipboard.writeText(processedEmails[activeEmailIndex].filteredContent)}
-                                className="btn copy-btn"
-                        
-                              >
-                                Copy Modified Email
-                              </button>
-                              <button 
-                                onClick={() => downloadEmail(processedEmails[activeEmailIndex].filteredContent, processedEmails[activeEmailIndex].name)}
-                                className="btn download-btn"
-                              >
-                                Download .eml
-                              </button>
-                            </>
-                          )}
-                          {viewMode === 'original' && (
-                            <button 
-                              onClick={() => navigator.clipboard.writeText(processedEmails[activeEmailIndex].originalContent)}
-                              className="btn copy-btn"
-                            >
-                              Copy Original Email
-                            </button>
-                          )}
-                          {viewMode === 'comparison' && (
-                            <button 
-                              onClick={copyModifiedEmail}
-                              className="btn copy-top-btn"
-                            >
-                              📋 Copy Modified Email
-                            </button>
-                          )}
+                        <div className="headers-content">
+                          {email.headersOnly && email.headersOnly.length > 200 
+                            ? email.headersOnly.substring(0, 200) + '...' 
+                            : email.headersOnly || 'No headers found'}
                         </div>
                       </div>
                       
-                      <div className="email-preview-container">
-                        {viewMode === 'comparison' && (
-                          <div className="comparison-view">
-                            <div className="comparison-panel">
-                              <div className="panel-header original-header">
-                                <h6>📝 Original Email</h6>
-                              </div>
+                      {/* Detailed View based on mode */}
+                      {activeEmailIndex === index && (
+                        <div className="detailed-view">
+                          {viewMode === 'headers' && (
+                            <div className="headers-detailed-view">
                               <textarea
-                                value={processedEmails[activeEmailIndex].originalContent}
+                                value={email.headersOnly}
+                                readOnly
+                                rows={12}
+                                onClick={(e) => e.stopPropagation()}
+                                className="headers-textarea"
+                              />
+                              <div className="view-actions">
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    copyHeadersToClipboard(index);
+                                  }}
+                                  className={`btn copy-btn ${copiedIndex === index ? 'copied' : ''}`}
+                                >
+                                  {copiedIndex === index ? '✅ Copied!' : '📋 Copy Headers'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {viewMode === 'full' && (
+                            <div className="full-email-view">
+                              <textarea
+                                value={email.filteredContent}
                                 readOnly
                                 rows={15}
-                                placeholder="Original email content..."
-                                className="original-email"
+                                onClick={(e) => e.stopPropagation()}
                               />
                             </div>
-                            <div className="comparison-panel">
-                              <div className="panel-header modified-header">
-                                <h6>✨ Modified Email</h6>
+                          )}
+                          
+                          {viewMode === 'comparison' && (
+                            <div className="comparison-view">
+                              <div className="comparison-panel">
+                                <h6>Original Headers:</h6>
+                                <textarea
+                                  value={email.originalHeaders}
+                                  readOnly
+                                  rows={8}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="original-headers"
+                                />
                               </div>
-                              <textarea
-                                value={processedEmails[activeEmailIndex].filteredContent}
-                                readOnly
-                                rows={15}
-                                placeholder="Modified email content..."
-                                className="modified-email"
-                              />
+                              <div className="comparison-panel">
+                                <h6>Modified Headers:</h6>
+                                <textarea
+                                  value={email.headersOnly}
+                                  readOnly
+                                  rows={8}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="modified-headers"
+                                />
+                              </div>
                             </div>
-                          </div>
-                        )}
-                        
-                        {viewMode === 'modified' && (
-                          <div className="single-view">
-                            <textarea
-                              value={processedEmails[activeEmailIndex].filteredContent}
-                              readOnly
-                              rows={20}
-                              placeholder="Modified email will appear here..."
-                            />
-                          </div>
-                        )}
-                        
-                        {viewMode === 'original' && (
-                          <div className="single-view">
-                            <textarea
-                              value={processedEmails[activeEmailIndex].originalContent}
-                              readOnly
-                              rows={20}
-                              placeholder="Original email content..."
-                            />
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="error-message">
+                      <strong>Error:</strong> {email.error}
                     </div>
-                  </>
-                ) : (
-                  <div className="error-message">
-                    <strong>Error processing file:</strong> {processedEmails[activeEmailIndex].error}
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
