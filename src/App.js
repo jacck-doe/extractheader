@@ -7,24 +7,25 @@ function App() {
   const [processedEmails, setProcessedEmails] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [customValues, setCustomValues] = useState({
-    rp: 'RP',
-    rdns: 'RDNS',
-    advunsub: 'ADVUNSUB',
+    rp: 'example.com',
+    rdns: 'example.com',
+    advunsub: 'unsubscribe',
     to: '*To',
-    date: '*DATE'
+    date: '*DATE',
+    fromName: 'Original Sender Name', // NEW
+    subject: 'Original Subject' // NEW
   });
   const [activeEmailIndex, setActiveEmailIndex] = useState(0);
-  const [viewMode, setViewMode] = useState('headers'); // 'headers', 'full', 'comparison'
+  const [viewMode, setViewMode] = useState('headers');
   const [copiedIndex, setCopiedIndex] = useState(null);
   const resultsRef = useRef(null);
 
-  // Exact headers to remove (only these specific ones)
   const headersToRemove = [
     'X-MS-Exchange-Transport-CrossTenantHeadersStamped',
-     'Content-Type',
-    'X-sib-id','List-Unsubscribe','List-Unsubscribe-Post',
+    'Content-Type',
+    'X-sib-id', 'List-Unsubscribe', 'List-Unsubscribe-Post',
     'X-CSA-Complaints',
-    'sender','X-Mailin-EID',
+    'sender', 'X-Mailin-EID',
     'X-Forwarded-Encrypted',
     'Delivered-To',
     'X-Google-Smtp-Source',
@@ -43,7 +44,6 @@ function App() {
     'X-Entity-ID'
   ];
 
-  // NEW: Extract only headers from content
   const extractHeadersOnly = (content) => {
     const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const headerEndIndex = findHeaderBodySeparator(normalized);
@@ -52,7 +52,6 @@ function App() {
       return normalized.substring(0, headerEndIndex).trim();
     }
     
-    // Fallback: extract until first empty line
     const lines = normalized.split('\n');
     let headerLines = [];
     for (let line of lines) {
@@ -62,17 +61,13 @@ function App() {
     return headerLines.join('\n');
   };
 
-  // NEW: Process email to get headers only
   const processSingleEmailForHeaders = (emailContent) => {
     try {
       const originalHeaders = extractHeadersOnly(emailContent);
-      
-      // Parse headers
       const headerLines = originalHeaders.split('\n');
       const processedHeaders = [];
       let currentHeader = '';
 
-      // Parse multi-line headers
       headerLines.forEach((line) => {
         if (line.match(/^[A-Za-z][A-Za-z0-9-]*:\s*/)) {
           if (currentHeader) {
@@ -93,7 +88,6 @@ function App() {
         processedHeaders.push(currentHeader);
       }
 
-      // Apply modifications
       let modifiedHeaders = processedHeaders.map(header => {
         const headerName = header.split(':')[0].trim();
         const originalSpacing = header.match(/^[^:]+:\s*/)?.[0] || headerName + ': ';
@@ -101,43 +95,38 @@ function App() {
         if (headerName.toLowerCase() === 'message-id') {
           return insertEIDIntoMessageId(header);
         } else if (headerName === 'From') {
-          return modifyFromHeader(header, customValues.rp);
+          return modifyFromHeader(header, customValues.rp, customValues.fromName);
         } else if (headerName === 'To') {
           return modifyToHeader(header, customValues.to);
         } else if (headerName === 'Date') {
           return modifyDateHeader(header, customValues.date);
+        } else if (headerName === 'Subject') {
+          return modifySubjectHeader(header, customValues.subject);
         }
         return header;
       });
 
-      // NEW: Keep ONLY "Received: by" headers, remove all other "Received:" headers
       modifiedHeaders = modifiedHeaders.filter(header => {
         const headerName = header.split(':')[0].trim();
         
-        // Remove ALL X- headers
         if (headerName.toLowerCase().startsWith('x-')) {
           return false;
         }
         
-        // Special handling for Received headers
         if (headerName === 'Received') {
           const headerValue = header.toLowerCase();
-          // Keep ONLY "Received: by" headers
           if (headerValue.includes('received: by') || headerValue.match(/^received:\s*by/i) || headerValue.includes('received: from')) {
             return true;
           }
-          // Remove all other Received headers
           return false;
         }
         
-        // Remove other specified headers
         return !headersToRemove.some(toRemove => {
           const cleanToRemove = toRemove.replace(': by', '').toLowerCase();
           return headerName.toLowerCase() === cleanToRemove;
         });
       });
 
-      // Add unsubscribe headers
       const unsubscribeHeaders = addUnsubscribeHeaders(customValues.rdns, customValues.advunsub);
       modifiedHeaders.push(...unsubscribeHeaders);
 
@@ -169,7 +158,7 @@ function App() {
       status: 'pending',
       originalContent: '',
       filteredContent: '',
-      headersOnly: '', // NEW: Store headers only
+      headersOnly: '',
       headerCount: 0,
       originalHeaders: '',
       error: null
@@ -189,7 +178,6 @@ function App() {
   };
 
   const findHeaderBodySeparator = (content) => {
-    // ... keep existing implementation ...
     const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     
     const doubleNewline = normalized.indexOf('\n\n');
@@ -241,26 +229,59 @@ function App() {
   const extractFromName = (fromHeader) => {
     if (!fromHeader) return '';
     
-    const nameMatch = fromHeader.match(/^From:\s*"([^"]+)"\s*<[^>]+>$/i) || 
-                     fromHeader.match(/^From:\s*([^<]+)\s*<[^>]+>$/i);
+    const headerValue = fromHeader.substring(fromHeader.indexOf(':') + 1).trim();
     
-    if (nameMatch && nameMatch[1]) {
-      return nameMatch[1].trim();
+    const quotedNameMatch = headerValue.match(/^"([^"]+)"\s*<[^>]+>$/);
+    if (quotedNameMatch) return quotedNameMatch[1];
+    
+    const unquotedNameMatch = headerValue.match(/^([^<]+)\s*<[^>]+>$/);
+    if (unquotedNameMatch) return unquotedNameMatch[1].trim();
+    
+    const emailMatch = headerValue.match(/^<([^>]+)>$/);
+    if (emailMatch) {
+      const email = emailMatch[1];
+      const atIndex = email.indexOf('@');
+      if (atIndex !== -1) {
+        return email.substring(0, atIndex);
+      }
     }
     
-    return '';
+    return headerValue;
   };
 
-  const modifyFromHeader = (fromHeader, rpValue) => {
+  const extractOriginalSubject = (subjectHeader) => {
+    if (!subjectHeader) return '';
+    return subjectHeader.substring(subjectHeader.indexOf(':') + 1).trim();
+  };
+
+  const modifyFromHeader = (fromHeader, rpValue, fromNameValue) => {
     if (!fromHeader) return 'From: <info@[' + rpValue + ']>';
     
-    const fromName = extractFromName(fromHeader);
+    let displayName = fromNameValue;
+    
+    if (fromNameValue === 'Original Sender Name') {
+      const originalName = extractFromName(fromHeader);
+      displayName = originalName || 'Sender';
+    }
+    
     const originalSpacing = fromHeader.match(/^From:(\s*)/)?.[1] || ' ';
     
-    if (fromName) {
-      return `From:${originalSpacing}"${fromName}" <info@[${rpValue}]>`;
+    if (displayName && displayName !== 'Original Sender Name') {
+      return `From:${originalSpacing}"${displayName}" <info@[${rpValue}]>`;
     } else {
       return `From:${originalSpacing}<info@[${rpValue}]>`;
+    }
+  };
+
+  const modifySubjectHeader = (subjectHeader, customSubject) => {
+    if (!subjectHeader) return 'Subject: [No Subject]';
+    
+    const originalSpacing = subjectHeader.match(/^Subject:(\s*)/)?.[1] || ' ';
+    
+    if (customSubject === 'Original Subject') {
+      return subjectHeader;
+    } else {
+      return `Subject:${originalSpacing}${customSubject}`;
     }
   };
 
@@ -314,7 +335,6 @@ function App() {
   };
 
   const processSingleEmail = (emailContent) => {
-    // ... keep existing implementation for full email processing ...
     if (!emailContent.trim()) {
       throw new Error('Empty email content');
     }
@@ -409,16 +429,17 @@ function App() {
       if (headerName.toLowerCase() === 'message-id') {
         return insertEIDIntoMessageId(header);
       } else if (headerName === 'From') {
-        return modifyFromHeader(header, customValues.rp);
+        return modifyFromHeader(header, customValues.rp, customValues.fromName);
       } else if (headerName === 'To') {
         return modifyToHeader(header, customValues.to);
       } else if (headerName === 'Date') {
         return modifyDateHeader(header, customValues.date);
+      } else if (headerName === 'Subject') {
+        return modifySubjectHeader(header, customValues.subject);
       }
       return header;
     });
 
-    // NEW: Modified filtering - Keep ONLY "Received: by" headers
     modifiedHeaders = modifiedHeaders.filter(header => {
       const headerName = header.split(':')[0].trim();
       
@@ -428,11 +449,9 @@ function App() {
       
       if (headerName === 'Received') {
         const headerValue = header.toLowerCase();
-        // Keep ONLY "Received: by" headers
         if (headerValue.includes('received: by') || headerValue.match(/^received:\s*by/i)) {
           return true;
         }
-        // Remove all other Received headers
         return false;
       }
       
@@ -451,8 +470,8 @@ function App() {
       headers: processedHeaders,
       body: bodySection,
       filteredEmail: filteredEmailContent,
-      headersOnly: modifiedHeaders.join('\n'), // NEW: Add headers only
-      headerCount: modifiedHeaders.length // NEW: Add header count
+      headersOnly: modifiedHeaders.join('\n'),
+      headerCount: modifiedHeaders.length
     };
   };
 
@@ -477,7 +496,6 @@ function App() {
       try {
         const content = await readFileContent(emailFile.file);
         const processed = processSingleEmail(content);
-        // NEW: Also get headers only version
         const headersOnly = processSingleEmailForHeaders(content);
         
         const result = {
@@ -485,9 +503,9 @@ function App() {
           status: 'completed',
           originalContent: content,
           filteredContent: processed.filteredEmail,
-          headersOnly: headersOnly.headersOnly, // NEW
-          headerCount: headersOnly.headerCount, // NEW
-          originalHeaders: headersOnly.originalHeaders, // NEW
+          headersOnly: headersOnly.headersOnly,
+          headerCount: headersOnly.headerCount,
+          originalHeaders: headersOnly.originalHeaders,
           headers: processed.headers,
           body: processed.body
         };
@@ -512,27 +530,22 @@ function App() {
     setProcessing(false);
     setShowResults(true);
     setActiveEmailIndex(0);
-    setViewMode('headers'); // NEW: Default to headers view
+    setViewMode('headers');
     
-    // Scroll to results
     setTimeout(() => {
       resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   };
 
-  // NEW: One-click copy headers function
   const copyHeadersToClipboard = (index) => {
     if (processedEmails[index] && processedEmails[index].status === 'completed') {
       const headers = processedEmails[index].headersOnly;
       navigator.clipboard.writeText(headers);
-      
-      // Visual feedback without alert
       setCopiedIndex(index);
-      setTimeout(() => setCopiedIndex(null), 2000); // Reset after 2 seconds
+      setTimeout(() => setCopiedIndex(null), 2000);
     }
   };
 
-  // NEW: Copy all headers
   const copyAllHeadersToClipboard = () => {
     const allHeaders = processedEmails
       .filter(e => e.status === 'completed')
@@ -544,7 +557,6 @@ function App() {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  // NEW: Quick actions component
   const QuickActions = ({ emailIndex }) => {
     const email = processedEmails[emailIndex];
     
@@ -614,7 +626,9 @@ function App() {
       rdns: 'example.com',
       advunsub: 'unsubscribe',
       to: 'recipient@example.com',
-      date: new Date().toGMTString()
+      date: new Date().toGMTString(),
+      fromName: 'Original Sender Name',
+      subject: 'Original Subject'
     });
   };
 
@@ -623,14 +637,42 @@ function App() {
   };
 
   const generateSampleEmail = () => {
-    // ... keep existing implementation ...
+    const sampleContent = `From: "John Doe" <john@original.com>
+To: "Jane Smith" <jane@example.com>
+Date: Mon, 15 Jan 2024 10:30:00 +0000
+Subject: Meeting Reminder for Tomorrow
+Message-ID: <1234567890@mail.original.com>
+Content-Type: text/plain; charset="UTF-8"
+
+Dear Jane,
+
+This is a reminder about our meeting tomorrow at 2 PM.
+
+Best regards,
+John`;
+
+    const sampleFile = new File([sampleContent], "sample_email.eml", { type: "message/rfc822" });
+    
+    const newEmailFile = {
+      file: sampleFile,
+      name: "sample_email.eml",
+      size: sampleContent.length,
+      status: 'pending',
+      originalContent: '',
+      filteredContent: '',
+      headersOnly: '',
+      headerCount: 0,
+      originalHeaders: '',
+      error: null
+    };
+    
+    setEmailFiles(prev => [...prev, newEmailFile]);
   };
 
   const navigateToEmail = (index) => {
     setActiveEmailIndex(index);
   };
 
-  // NEW: Auto-scroll to active email
   useEffect(() => {
     if (showResults) {
       const activeElement = document.querySelector(`.email-result-card.active`);
@@ -649,7 +691,7 @@ function App() {
           </div>
           <div className="header-titles">
             <h1>Email Header Modifier</h1>
-            <p className="subtitle">Quick header extraction with one-click copy</p>
+            <p className="subtitle">Customize From Name and Subject with one-click copy</p>
           </div>
         </div>
       </header>
@@ -712,6 +754,26 @@ function App() {
               <h4>Custom Values</h4>
               <div className="custom-values-grid">
                 <div className="custom-input">
+                  <label>From Name:</label>
+                  <input
+                    type="text"
+                    value={customValues.fromName}
+                    onChange={(e) => handleCustomValueChange('fromName', e.target.value)}
+                    placeholder="Enter custom From Name"
+                  />
+                  <small>Use "Original Sender Name" to keep original</small>
+                </div>
+                <div className="custom-input">
+                  <label>Subject:</label>
+                  <input
+                    type="text"
+                    value={customValues.subject}
+                    onChange={(e) => handleCustomValueChange('subject', e.target.value)}
+                    placeholder="Enter custom Subject"
+                  />
+                  <small>Use "Original Subject" to keep original</small>
+                </div>
+                <div className="custom-input">
                   <label>RP Domain:</label>
                   <input
                     type="text"
@@ -719,6 +781,7 @@ function App() {
                     onChange={(e) => handleCustomValueChange('rp', e.target.value)}
                     placeholder="example.com"
                   />
+                  <small>Used in From email address</small>
                 </div>
                 <div className="custom-input">
                   <label>RDNS Domain:</label>
@@ -728,6 +791,7 @@ function App() {
                     onChange={(e) => handleCustomValueChange('rdns', e.target.value)}
                     placeholder="example.com"
                   />
+                  <small>Used in unsubscribe links</small>
                 </div>
                 <div className="custom-input">
                   <label>Unsubscribe Path:</label>
@@ -737,6 +801,17 @@ function App() {
                     onChange={(e) => handleCustomValueChange('advunsub', e.target.value)}
                     placeholder="unsubscribe"
                   />
+                  <small>Path in unsubscribe URL</small>
+                </div>
+                <div className="custom-input">
+                  <label>To Field:</label>
+                  <input
+                    type="text"
+                    value={customValues.to}
+                    onChange={(e) => handleCustomValueChange('to', e.target.value)}
+                    placeholder="*To"
+                  />
+                  <small>Custom To field value</small>
                 </div>
               </div>
               <div className="custom-values-hint">
@@ -764,7 +839,6 @@ function App() {
 
         {showResults && (
           <div className="results-section" ref={resultsRef}>
-            {/* Header Quick Summary */}
             <div className="quick-summary">
               <div className="summary-stats">
                 <div className="stat-card">
@@ -821,7 +895,6 @@ function App() {
               )}
             </div>
 
-            {/* Email Results - New Compact Layout */}
             <div className="email-results-grid">
               {processedEmails.map((email, index) => (
                 <div 
@@ -846,10 +919,8 @@ function App() {
                   
                   {email.status === 'completed' ? (
                     <>
-                      {/* Quick Actions */}
                       <QuickActions emailIndex={index} />
                       
-                      {/* Headers Preview (Always visible) */}
                       <div className="headers-preview">
                         <div className="preview-header">
                           <h6>Modified Headers Preview:</h6>
@@ -861,7 +932,6 @@ function App() {
                         </div>
                       </div>
                       
-                      {/* Detailed View based on mode */}
                       {activeEmailIndex === index && (
                         <div className="detailed-view">
                           {viewMode === 'headers' && (
