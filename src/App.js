@@ -21,6 +21,7 @@ function App() {
   // Exact headers to remove (only these specific ones)
   const headersToRemove = [
     'X-MS-Exchange-Transport-CrossTenantHeadersStamped',
+     'Content-Type',
     'X-sib-id','List-Unsubscribe','List-Unsubscribe-Post',
     'X-CSA-Complaints',
     'sender','X-Mailin-EID',
