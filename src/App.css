@@ -8,8 +8,8 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -676,13 +676,13 @@ body {
   font-weight: bold;
   color: #333;
   margin-bottom: 0.25rem;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 0.9rem;
 }
 
 .header-value {
   color: #666;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 0.85rem;
   line-height: 1.4;
   word-break: break-all;
@@ -759,7 +759,8 @@ body {
   flex-wrap: wrap;
 }
 
-.copy-btn, .download-btn {
+.copy-btn,
+.download-btn {
   padding: 0.5rem 1rem;
   font-size: 0.9rem;
   border: 1px solid #ddd;
@@ -824,11 +825,12 @@ body {
   font-size: 0.95rem;
 }
 
-.original-email, .modified-email {
+.original-email,
+.modified-email {
   border: none;
   border-radius: 0;
   padding: 1rem;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 0.85rem;
   line-height: 1.4;
   resize: vertical;
@@ -851,7 +853,7 @@ body {
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 1rem;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 0.85rem;
   line-height: 1.4;
   resize: vertical;
@@ -874,62 +876,62 @@ body {
   .container {
     padding: 1rem;
   }
-  
+
   .header-brand {
     flex-direction: column;
     text-align: center;
     gap: 1rem;
   }
-  
+
   .header-titles h1 {
     font-size: 2rem;
   }
-  
+
   .custom-values-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .button-group {
     flex-direction: column;
   }
-  
+
   .btn {
     width: 100%;
     justify-content: center;
   }
-  
+
   .comparison-view {
     grid-template-columns: 1fr;
   }
-  
+
   .email-header {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .email-header-actions {
     width: 100%;
     justify-content: space-between;
   }
-  
+
   .headers-stats {
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .nav-buttons {
     justify-content: center;
   }
-  
+
   .files-stats {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .email-preview-header {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .email-actions {
     width: 100%;
     justify-content: center;
@@ -941,36 +943,36 @@ body {
   .results-section {
     padding: 1rem;
   }
-  
+
   .upload-area {
     padding: 2rem 1rem;
   }
-  
+
   .upload-icon {
     font-size: 2rem;
   }
-  
+
   .file-info {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
   }
-  
+
   .file-actions {
     width: 100%;
     justify-content: space-between;
   }
-  
+
   .view-mode-selector {
     width: 100%;
     justify-content: center;
   }
-  
+
   .header-item {
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .header-action {
     align-self: flex-start;
   }
@@ -1018,7 +1020,7 @@ body {
 }
 
 .btn:disabled::after {
-  content: '';
+  content: "";
   position: absolute;
   width: 16px;
   height: 16px;
@@ -1029,8 +1031,12 @@ body {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 /* Print Styles */
@@ -1041,16 +1047,16 @@ body {
   .file-actions {
     display: none;
   }
-  
+
   .App-header {
     background: #333 !important;
     color: white !important;
   }
-  
+
   .container {
     padding: 0;
   }
-  
+
   .input-section,
   .results-section {
     box-shadow: none;
@@ -1074,12 +1080,12 @@ body {
 }
 
 .copy-headers-btn {
-  background: #4CAF50;
+  background: #4caf50;
   color: white;
 }
 
 .copy-headers-btn.copied {
-  background: #2E7D32;
+  background: #2e7d32;
 }
 
 /* Email Results Grid */
@@ -1100,12 +1106,12 @@ body {
 }
 
 .email-result-card:hover {
-  border-color: #4CAF50;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-color: #4caf50;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .email-result-card.active {
-  border-color: #4CAF50;
+  border-color: #4caf50;
   border-width: 2px;
   background: #f8fff8;
 }
@@ -1152,7 +1158,7 @@ body {
   padding: 10px;
   background: #f9f9f9;
   border-radius: 4px;
-  border-left: 3px solid #4CAF50;
+  border-left: 3px solid #4caf50;
 }
 
 .preview-header {
@@ -1169,7 +1175,7 @@ body {
 }
 
 .headers-content {
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 11px;
   color: #333;
   line-height: 1.4;
@@ -1188,7 +1194,7 @@ body {
 .headers-detailed-view textarea,
 .full-email-view textarea {
   width: 100%;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 12px;
   padding: 10px;
   border: 1px solid #ddd;
@@ -1219,7 +1225,7 @@ body {
 .comparison-panel textarea {
   width: 100%;
   height: 200px;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 11px;
   padding: 8px;
   border: 1px solid #ddd;
@@ -1254,13 +1260,13 @@ body {
   padding: 10px 15px;
   background: white;
   border-radius: 6px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .stat-number {
   font-size: 24px;
   font-weight: bold;
-  color: #4CAF50;
+  color: #4caf50;
 }
 
 .stat-label {
@@ -1285,7 +1291,7 @@ body {
 }
 
 .bulk-copy-btn.copied {
-  background: #2E7D32;
+  background: #2e7d32;
 }
 
 /* View Mode Tabs */
@@ -1309,8 +1315,8 @@ body {
 
 .view-tab.active {
   background: white;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  color: #4CAF50;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: #4caf50;
 }
 
 /* Responsive */
@@ -1318,22 +1324,279 @@ body {
   .email-results-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .comparison-view {
     grid-template-columns: 1fr;
   }
-  
+
   .quick-actions {
     flex-direction: column;
   }
-  
+
   .bulk-actions {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .view-mode-tabs {
     order: 1;
     margin-top: 10px;
   }
+}
+
+.custom-values-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.custom-input {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.custom-input label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+}
+
+.custom-input select,
+.custom-input input[type="text"] {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.custom-input select:focus,
+.custom-input input[type="text"]:focus {
+  outline: none;
+  border-color: #4a6cf7;
+  box-shadow: 0 0 0 2px rgba(74, 108, 247, 0.1);
+}
+
+.custom-input small {
+  color: #666;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.custom-input input[type="text"] {
+  margin-top: 5px;
+}
+
+.custom-values-hint {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border-left: 4px solid #4a6cf7;
+}
+
+.custom-values-hint small {
+  color: #495057;
+  font-style: italic;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .custom-values-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.email-results-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.email-result-card {
+  background: white;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  padding: 20px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.email-result-card:hover {
+  border-color: #4a6cf7;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.email-result-card.active {
+  border-color: #4a6cf7;
+  background-color: #f8f9ff;
+}
+
+.email-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+.email-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.email-card-title h5 {
+  margin: 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.email-status-badge {
+  font-size: 14px;
+}
+
+.email-card-meta {
+  display: flex;
+  gap: 15px;
+  font-size: 12px;
+  color: #666;
+}
+
+.meta-item {
+  background: #f1f3f5;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+
+.headers-preview {
+  background: #f8f9fa;
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.preview-header h6 {
+  margin: 0;
+  font-size: 14px;
+  color: #495057;
+}
+
+.headers-content {
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  color: #495057;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 100px;
+  overflow: hidden;
+}
+
+.detailed-view {
+  margin-top: 15px;
+  border-top: 1px solid #e1e5e9;
+  padding-top: 15px;
+}
+
+.headers-detailed-view textarea,
+.full-email-view textarea {
+  width: 100%;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #f8f9fa;
+  resize: vertical;
+}
+
+.view-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.comparison-view {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.comparison-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comparison-panel h6 {
+  margin: 0;
+  font-size: 14px;
+  color: #495057;
+}
+
+.comparison-panel textarea {
+  width: 100%;
+  height: 200px;
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.original-headers {
+  background: #fff5f5;
+}
+
+.modified-headers {
+  background: #f0fff4;
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.view-mode-tabs {
+  display: flex;
+  gap: 5px;
+  background: #f1f3f5;
+  padding: 4px;
+  border-radius: 6px;
+  margin-left: auto;
+}
+
+.view-tab {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-tab.active {
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
